@@ -1,10 +1,14 @@
 const express = require('express')
 const { graphqlHTTP } = require('express-graphql')
 const { buildSchema } = require('graphql')
+const mongoose = require('mongoose')
+
+// Models
+const EventModel = require('./models/event')
+
+require('dotenv').config()
 
 const app = express()
-
-const eventsList = []
 
 app.get('/', (req, res, next) => {
   res.send('Hello')
@@ -43,22 +47,47 @@ app.use(
     `),
     rootValue: {
       events: () => {
-        return eventsList
+        return EventModel.find()
+          .then(events => {
+            return events.map(event => {
+              return { ...event._doc }
+            })
+          })
+          .catch(err => {
+            throw err
+          })
       },
       createEvent: args => {
-        const event = {
-          _id: Math.random().toString(),
+        const event = new EventModel({
           title: args.eventInput.title,
           description: args.eventInput.description,
           price: +args.eventInput.price,
-          date: args.eventInput.date
-        }
-        eventsList.push(event)
+          date: new Date(args.eventInput.date)
+        })
         return event
+          .save()
+          .then(result => {
+            console.log(result)
+            return { ...result._doc }
+          })
+          .catch(err => {
+            console.log(err)
+            throw err
+          })
       }
     },
     graphiql: true
   })
 )
 
-app.listen(3000)
+mongoose
+  .connect(`${process.env.URL}`, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true
+  })
+  .then(() => {
+    app.listen(4000, () => {
+      console.log('now listening for requests on http://localhost:4000/graphql')
+    })
+  })
+  .catch(err => console.log(err))
