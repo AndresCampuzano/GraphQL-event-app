@@ -2,9 +2,11 @@ const express = require('express')
 const { graphqlHTTP } = require('express-graphql')
 const { buildSchema } = require('graphql')
 const mongoose = require('mongoose')
+const bcrypt = require('bcryptjs')
 
 // Models
 const EventModel = require('./models/event')
+const UserModel = require('./models/user')
 
 require('dotenv').config()
 
@@ -26,6 +28,12 @@ app.use(
           date: String!
         }
 
+        type User {
+          _id: ID!
+          email: String!
+          password: String
+        }
+
         input EventInput {
           title: String!
           description: String!
@@ -33,12 +41,18 @@ app.use(
           date: String!
         }
 
+        input UserInput {
+          email: String!
+          password: String!
+        }
+
         type RootQuery {
             events: [Event!]!
         }
 
         type RootMutation {
-            createEvent(eventInput: EventInput!): Event
+            createEvent(eventInput: EventInput): Event
+            createUser(userInput: UserInput): User
         }
         schema {
             query: RootQuery
@@ -57,23 +71,58 @@ app.use(
             throw err
           })
       },
-      createEvent: args => {
+      createEvent: async args => {
         const event = new EventModel({
           title: args.eventInput.title,
           description: args.eventInput.description,
           price: +args.eventInput.price,
-          date: new Date(args.eventInput.date)
+          date: new Date(args.eventInput.date),
+          creator: '5fa86848771c3a63483a9dd2'
         })
+        let createdEvent
         return event
           .save()
           .then(result => {
-            console.log(result)
-            return { ...result._doc }
+            createdEvent = { ...result._doc }
+            // relation
+            return UserModel.findById('5fa86848771c3a63483a9dd2')
+          })
+          .then(user => {
+            if (!user) {
+              throw new Error('User not found.')
+            } else {
+              user.createdEvents.push(event)
+              return user.save()
+            }
+          })
+          .then(() => {
+            return createdEvent
           })
           .catch(err => {
-            console.log(err)
             throw err
           })
+      },
+      createUser: async args => {
+        // validating user
+        const email = args.userInput.email
+        const existingUser = await UserModel.findOne({ email })
+        if (existingUser) {
+          throw new Error('user already exists')
+        } else {
+          // creating new user after validation
+          const user = new UserModel({
+            email: args.userInput.email,
+            password: await bcrypt.hash(args.userInput.password, 12)
+          })
+          return user
+            .save()
+            .then(result => {
+              return { ...result._doc, password: null }
+            })
+            .catch(err => {
+              throw err
+            })
+        }
       }
     },
     graphiql: true
